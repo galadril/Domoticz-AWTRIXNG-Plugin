@@ -109,12 +109,12 @@ return {
             local statusesJSON = domoticz.utils.toJSON(statuses)
             domoticz.log("Sending statuses to AWTRIX (multiApp): " .. statusesJSON, domoticz.LOG_INFO)
             
-            local appDevice = domoticz.devices('AWTRIX3 - Send Custom App')
+            local appDevice = domoticz.devices('AWTRIX NG - Send Custom App')
             if appDevice then
                 appDevice.setDescription(statusesJSON)
                 appDevice.switchOn().afterSec(2)
             else
-                domoticz.log("AWTRIX3 - Send Custom App device not found", domoticz.LOG_ERROR)
+                domoticz.log("AWTRIX NG - Send Custom App device not found", domoticz.LOG_ERROR)
             end
         else
             -- SingleApp: Cycle through statuses
@@ -131,12 +131,12 @@ return {
             local selectedStatus = statuses[currentIndex + 1]
             domoticz.log(string.format("Sending single status to AWTRIX (singleApp): %s", domoticz.utils.toJSON(selectedStatus)), domoticz.LOG_INFO)
 
-            local appDevice = domoticz.devices('AWTRIX3 - Send Custom App')
+            local appDevice = domoticz.devices('AWTRIX NG - Send Custom App')
             if appDevice then
                 appDevice.setDescription(domoticz.utils.toJSON(selectedStatus))
                 appDevice.switchOn().afterSec(2)
             else
-                domoticz.log("AWTRIX3 - Send Custom App device not found", domoticz.LOG_ERROR)
+                domoticz.log("AWTRIX NG - Send Custom App device not found", domoticz.LOG_ERROR)
             end
 
             -- Update the index for the next cycle

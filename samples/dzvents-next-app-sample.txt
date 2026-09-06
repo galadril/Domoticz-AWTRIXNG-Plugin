@@ -17,7 +17,7 @@ return {
 
     -- Event execution when the timer triggers the script
     execute = function(domoticz)
-        local appNextDevice = domoticz.devices('AWTRIX3 - Next App')
+        local appNextDevice = domoticz.devices('AWTRIX NG - Next App')
         appNextDevice.switchOn()
     end
 }

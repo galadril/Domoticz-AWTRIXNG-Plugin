@@ -39,6 +39,7 @@ UNIT_TRANSITION = 11
 UNIT_OVERLAY = 12
 UNIT_TEXTCOLOR = 13
 UNIT_BRIGHTNESS = 14
+UNIT_SLEEP = 15
 
 TRANSITION_OPTIONS = "Off|Slide|Zoom|Fade|Random"
 OVERLAY_OPTIONS = "None|Snow|Rain|Frost|Drizzle|Storm|Thunder|Wind|Clouds"
@@ -64,35 +65,37 @@ class BasePlugin:
             Domoticz.Image("AWTRIXNG-Icons.zip").Create()
 
         if UNIT_POWER not in Devices:
-            Domoticz.Device(Name="Power", Unit=UNIT_POWER, TypeName="Switch", Image=Images["AWTRIXNG"].ID).Create()
+            Domoticz.Device(Name="AWTRIX NG - Power", Unit=UNIT_POWER, TypeName="Switch", Image=Images["AWTRIXNG"].ID).Create()
         if UNIT_LUX not in Devices:
-            Domoticz.Device(Name="Lux", Unit=UNIT_LUX, TypeName="Lux", Image=Images["AWTRIXNG"].ID).Create()
+            Domoticz.Device(Name="AWTRIX NG - Lux", Unit=UNIT_LUX, TypeName="Lux", Image=Images["AWTRIXNG"].ID).Create()
         if UNIT_TEMPHUM not in Devices:
-            Domoticz.Device(Name="Temp+Hum", Unit=UNIT_TEMPHUM, TypeName="Temp+Hum", Image=Images["AWTRIXNG"].ID).Create()
+            Domoticz.Device(Name="AWTRIX NG - Temp+Hum", Unit=UNIT_TEMPHUM, TypeName="Temp+Hum", Image=Images["AWTRIXNG"].ID).Create()
         if UNIT_NOTIFICATION not in Devices:
-            Domoticz.Device(Name="Send Notification", Unit=UNIT_NOTIFICATION, TypeName="Text", Image=Images["AWTRIXNG"].ID).Create()
+            Domoticz.Device(Name="AWTRIX NG - Send Notification", Unit=UNIT_NOTIFICATION, TypeName="Text", Image=Images["AWTRIXNG"].ID).Create()
         if UNIT_CUSTOMAPP not in Devices:
-            Domoticz.Device(Name="Send Custom App", Unit=UNIT_CUSTOMAPP, TypeName="Text", Image=Images["AWTRIXNG"].ID).Create()
+            Domoticz.Device(Name="AWTRIX NG - Send Custom App", Unit=UNIT_CUSTOMAPP, TypeName="Text", Image=Images["AWTRIXNG"].ID).Create()
         if UNIT_SETTINGS not in Devices:
-            Domoticz.Device(Name="Send Settings", Unit=UNIT_SETTINGS, TypeName="Text", Image=Images["AWTRIXNG"].ID).Create()
+            Domoticz.Device(Name="AWTRIX NG - Send Settings", Unit=UNIT_SETTINGS, TypeName="Text", Image=Images["AWTRIXNG"].ID).Create()
         if UNIT_NEXTAPP not in Devices:
-            Domoticz.Device(Name="Next App", Unit=UNIT_NEXTAPP, TypeName="Switch", Switchtype=9, Image=Images["AWTRIXNG"].ID).Create()
+            Domoticz.Device(Name="AWTRIX NG - Next App", Unit=UNIT_NEXTAPP, TypeName="Switch", Switchtype=9, Image=Images["AWTRIXNG"].ID).Create()
         if UNIT_PREVAPP not in Devices:
-            Domoticz.Device(Name="Previous App", Unit=UNIT_PREVAPP, TypeName="Switch", Switchtype=9, Image=Images["AWTRIXNG"].ID).Create()
+            Domoticz.Device(Name="AWTRIX NG - Previous App", Unit=UNIT_PREVAPP, TypeName="Switch", Switchtype=9, Image=Images["AWTRIXNG"].ID).Create()
         if UNIT_DISMISS not in Devices:
-            Domoticz.Device(Name="Dismiss Notification", Unit=UNIT_DISMISS, TypeName="Switch", Switchtype=9, Image=Images["AWTRIXNG"].ID).Create()
+            Domoticz.Device(Name="AWTRIX NG - Dismiss Notification", Unit=UNIT_DISMISS, TypeName="Switch", Switchtype=9, Image=Images["AWTRIXNG"].ID).Create()
         if UNIT_RTTTL not in Devices:
-            Domoticz.Device(Name="RTTTL", Unit=UNIT_RTTTL, TypeName="Text", Image=Images["AWTRIXNG"].ID).Create()
+            Domoticz.Device(Name="AWTRIX NG - RTTTL", Unit=UNIT_RTTTL, TypeName="Text", Image=Images["AWTRIXNG"].ID).Create()
         if UNIT_TRANSITION not in Devices:
             options = {"LevelActions": "|" * (len(TRANSITION_OPTIONS.split("|")) - 1), "LevelNames": TRANSITION_OPTIONS, "LevelOffHidden": "false", "SelectorStyle": "0"}
-            Domoticz.Device(Name="Transition effect", Unit=UNIT_TRANSITION, TypeName="Selector Switch", Options=options, Image=Images["AWTRIXNG"].ID).Create()
+            Domoticz.Device(Name="AWTRIX NG - Transition effect", Unit=UNIT_TRANSITION, TypeName="Selector Switch", Options=options, Image=Images["AWTRIXNG"].ID).Create()
         if UNIT_OVERLAY not in Devices:
             options = {"LevelActions": "|" * (len(OVERLAY_OPTIONS.split("|")) - 1), "LevelNames": OVERLAY_OPTIONS, "LevelOffHidden": "false", "SelectorStyle": "0"}
-            Domoticz.Device(Name="Overlay", Unit=UNIT_OVERLAY, TypeName="Selector Switch", Options=options, Image=Images["AWTRIXNG"].ID).Create()
+            Domoticz.Device(Name="AWTRIX NG - Overlay", Unit=UNIT_OVERLAY, TypeName="Selector Switch", Options=options, Image=Images["AWTRIXNG"].ID).Create()
         if UNIT_TEXTCOLOR not in Devices:
-            Domoticz.Device(Name="Text color", Unit=UNIT_TEXTCOLOR, TypeName="Color Switch", Switchtype=7, Image=Images["AWTRIXNG"].ID).Create()
+            Domoticz.Device(Name="AWTRIX NG - Text color", Unit=UNIT_TEXTCOLOR, TypeName="Color Switch", Switchtype=7, Image=Images["AWTRIXNG"].ID).Create()
         if UNIT_BRIGHTNESS not in Devices:
-            Domoticz.Device(Name="Brightness", Unit=UNIT_BRIGHTNESS, TypeName="Dimmer", Image=Images["AWTRIXNG"].ID).Create()
+            Domoticz.Device(Name="AWTRIX NG - Brightness", Unit=UNIT_BRIGHTNESS, TypeName="Dimmer", Image=Images["AWTRIXNG"].ID).Create()
+        if UNIT_SLEEP not in Devices:
+            Domoticz.Device(Name="AWTRIX NG - Sleep Mode", Unit=UNIT_SLEEP, TypeName="Switch", Image=Images["AWTRIXNG"].ID).Create()
 
         Domoticz.Heartbeat(30)
 
@@ -216,6 +219,16 @@ class BasePlugin:
                 brightness = int(Level * 255 / 100)
                 self._request("PATCH", "/api/v1/settings", {"ABRI": False, "BRI": brightness})
                 Devices[Unit].Update(nValue=1, sValue=str(Level))
+
+        elif Unit == UNIT_SLEEP:
+            state = Command.upper() == "ON"
+            if state:
+                try:
+                    seconds = int(Devices[Unit].sValue) if Devices[Unit].sValue else 60
+                except ValueError:
+                    seconds = 60
+                self._request("POST", "/api/v1/device/sleep", {"sleep": seconds})
+            Devices[Unit].Update(nValue=1 if state else 0, sValue=Devices[Unit].sValue)
 
     def onHeartbeat(self):
         stats = self._request("GET", "/api/v1/device")

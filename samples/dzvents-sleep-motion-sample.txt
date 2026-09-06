@@ -12,7 +12,7 @@ return {
 
     logging = {
         level = domoticz.LOG_INFO,
-        marker = "AWTRIX3_SLEEP"
+        marker = "AWTRIXNG_SLEEP"
     },
 
     -- Persistent variable to track last motion time
@@ -22,8 +22,8 @@ return {
 
     execute = function(domoticz, item)
         local motionSensor = domoticz.devices('Kantoor - BewegingsSensor')
-        local sleepDevice = domoticz.devices('AWTRIX3 - Sleep Mode')
-        local powerDevice = domoticz.devices('AWTRIX3 - Power')
+        local sleepDevice = domoticz.devices('AWTRIX NG - Sleep Mode')
+        local powerDevice = domoticz.devices('AWTRIX NG - Power')
         local sleepDuration = 1800 -- Sleep duration: 30 minutes
         local noMotionThreshold = 10 -- Threshold in minutes for inactivity
 
@@ -42,7 +42,7 @@ return {
         -- Update lastMotionTime based on motion sensor state
         if motionSensor.state == 'On' then
             domoticz.data.lastMotionTime = timeToSeconds(domoticz.time.rawTime) -- Update time when motion is detected
-            domoticz.log('Motion detected in Kantoor. Keeping AWTRIX3 awake.', domoticz.LOG_INFO)
+            domoticz.log('Motion detected in Kantoor. Keeping AWTRIX NG awake.', domoticz.LOG_INFO)
             return -- Exit script as motion was detected
         end
 
@@ -56,12 +56,12 @@ return {
                 if sleepDevice then
                     sleepDevice.updateText(tostring(sleepDuration)) -- Set sleep duration
                     sleepDevice.switchOn() -- Trigger sleep mode
-                    domoticz.log('AWTRIX3 put to sleep for ' .. sleepDuration .. ' seconds due to inactivity in Kantoor.', domoticz.LOG_INFO)
+                    domoticz.log('AWTRIX NG put to sleep for ' .. sleepDuration .. ' seconds due to inactivity in Kantoor.', domoticz.LOG_INFO)
                 else
                     domoticz.log('Sleep Mode device not found.', domoticz.LOG_ERROR)
                 end
             else
-                domoticz.log('AWTRIX3 is already off. No action required.', domoticz.LOG_INFO)
+                domoticz.log('AWTRIX NG is already off. No action required.', domoticz.LOG_INFO)
             end
         else
             domoticz.log('Inactivity time not sufficient to trigger sleep mode.', domoticz.LOG_INFO)

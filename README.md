@@ -3,7 +3,7 @@
 
 **Plugin for Integrating AWTRIX NG Smart Pixel Clock with Domoticz**
 
-![AWTRIX Domoticz](https://github.com/galadril/Domoticz-AWTRIX3-Plugin/blob/master/images/awtrix_domoticz.gif?raw=true)
+![AWTRIX Domoticz](https://github.com/galadril/Domoticz-AWTRIXNG-Plugin/blob/master/images/awtrix_domoticz.gif?raw=true)
 
 ## 🌟 Overview
 Dive into the world of smart home technology by integrating your AWTRIX NG Smart Pixel Clock with Domoticz! This plugin lets you send messages as notifications, manage custom apps dynamically, control power, fetch and display temperature, humidity, and illumination stats, and utilize push buttons for notifications or custom app text.
@@ -53,6 +53,7 @@ Dive into the world of smart home technology by integrating your AWTRIX NG Smart
 - **Overlay:** A selector to specify a 'weather' overlay to be shown on the AWTRIX NG.
 - **Text color:** A RGB color selector to change the global color text color. 
 - **Brightness:** Allows to control the (auto) brightness of the AWTRIX NG.
+- **Sleep Mode:** Puts the AWTRIX NG display to sleep for a given duration (in seconds, set via the device description/text).
 
 ## 🚀 Usage
 ### Push Button Notifications
@@ -118,10 +119,10 @@ The description of the push button (`Send settings`) should be set to a JSON obj
 | Show every app for 10 seconds with 2 s change | `{ "ATIME": 10, "TSPEED": 2000 }`                 |
 
 ## 🌈 Samples
-![Samples1](https://github.com/galadril/Domoticz-AWTRIX3-Plugin/blob/master/images/awtrix_door.gif?raw=true)
-![Samples2](https://github.com/galadril/Domoticz-AWTRIX3-Plugin/blob/master/images/awtrix_fan.gif?raw=true)
-![Samples3](https://github.com/galadril/Domoticz-AWTRIX3-Plugin/blob/master/images/awtrix_power.gif?raw=true)
-![Samples4](https://github.com/galadril/Domoticz-AWTRIX3-Plugin/blob/master/images/awtrix_water.gif?raw=true)
+![Samples1](https://github.com/galadril/Domoticz-AWTRIXNG-Plugin/blob/master/images/awtrix_door.gif?raw=true)
+![Samples2](https://github.com/galadril/Domoticz-AWTRIXNG-Plugin/blob/master/images/awtrix_fan.gif?raw=true)
+![Samples3](https://github.com/galadril/Domoticz-AWTRIXNG-Plugin/blob/master/images/awtrix_power.gif?raw=true)
+![Samples4](https://github.com/galadril/Domoticz-AWTRIXNG-Plugin/blob/master/images/awtrix_water.gif?raw=true)
 
 ## 📅 Change log
 | Version | Information |
