@@ -1,0 +1,23 @@
+return {
+    -- The script is active
+    active = true,
+
+    -- Trigger section: run the script every 1 minute
+    on = {
+        timer = {
+            'every 1 minutes'
+        }
+    },
+
+    -- Custom logging level for this script
+    logging = {
+        level = domoticz.LOG_INFO,
+        marker = "AWTRIX_NEXT"
+    },
+
+    -- Event execution when the timer triggers the script
+    execute = function(domoticz)
+        local appNextDevice = domoticz.devices('AWTRIX3 - Next App')
+        appNextDevice.switchOn()
+    end
+}
