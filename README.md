@@ -40,8 +40,8 @@ Dive into the world of smart home technology by integrating your AWTRIX NG Smart
 
 ### Devices
 - **Power Device:** Toggles the power state of the AWTRIX NG device.
-- **Lux Device:** Displays the illumination levels.
-- **Temp+Hum Device:** Displays temperature and humidity levels with comfort index.
+- **Lux Device:** Displays the ambient light level. Note that AWTRIX NG reports this as a relative 0-100 percentage rather than absolute lux.
+- **Temp+Hum Device:** Displays temperature and humidity levels with comfort index, plus the battery level when the panel is battery powered.
 - **Send Notification:** Virtual device to send notifications via the AWTRIX NG API.
 - **Send Custom App:** Virtual device to send custom applications data via the AWTRIX NG API.
 - **Send Settings:** Virtual device to send settings via the AWTRIX NG API.
@@ -57,6 +57,14 @@ Dive into the world of smart home technology by integrating your AWTRIX NG Smart
 
 ## 🚀 Usage
 ### Push Button Notifications
+`Send Notification`, `Send Custom App`, `Send Settings`, `RTTTL` and `Sleep Mode` are push buttons that read their payload from the **description** of the device. Set the description, then switch the button on:
+
+```lua
+local appDevice = domoticz.devices('AWTRIXNG - Send Custom App')
+appDevice.setDescription(statusesJSON)
+appDevice.switchOn().afterSec(2)
+```
+
 The description of the push buttons (`Send Notification` and `Send Custom App`) can be used in three ways:
 1. **JSON:**
    - Example: `{ "text": "600 L", "icon": 9766 }`
@@ -96,7 +104,7 @@ using the Send Custom App button, it is best to also include an "appname" key an
 value in the JSON data, as otherwise the Custom Apps of the other dzVents scripts will be overwritten.
 
 ### Dismiss Notification
-Toggling the `Dismiss Notification` push button triggers the AWTRIX NG `/api/notify/dismiss` endpoint, instantly clearing the currently displayed notification from the matrix.
+Toggling the `Dismiss Notification` push button triggers `DELETE /api/v1/notifications/active`, instantly clearing the currently displayed notification from the matrix.
 
 ### Icons
 To display icons on the AWTRIX NG device, you need to manually upload them. You can fetch icons from the [LaMetric Developer Site](https://developer.lametric.com/icons).
@@ -136,6 +144,7 @@ The description of the push button (`Send settings`) should be set to a JSON obj
 |   0.0.8 | Set custom app names + custom app icon |
 |   0.0.9 | Added sleep button |
 |   1.0.0 | Rewritten for AWTRIX NG, added Dismiss Notification button |
+|   2.0.1 | Ported all endpoints and field names to the AWTRIX NG v1 API, restored the AWTRIX 3 device behaviour (description-driven push buttons, selector level ordering, comfort index, battery level, state read-back) and validated selector names against `/api/v1/capabilities` |
 
 ## 🚀 Updates and Contributions
 This project is open-source and contributions are welcome! Visit the GitHub repository for more information: [Domoticz-AWTRIXNG-Plugin](https://blueforcer.github.io/awtrix-ng/#/api?id=custom-apps-and-notifications).

@@ -47,9 +47,12 @@ Runtime dependency: `requests`.
 
 The user's existing Domoticz automations and the scripts in `samples/` must keep working against this NG rewrite. Device set and behaviour may grow, but must not change or shrink. Concretely, when touching a unit, check `samples/*.txt` for how it is actually driven — the samples are the spec:
 
-- Device *names* matter. dzVents resolves devices by `"<hardware name> - <device name>"`, e.g. `AWTRIX NG - Send Custom App`, `AWTRIX NG - Sleep Mode`, `AWTRIX NG - Overlay`, `AWTRIX NG - Power`. Renaming a device in `onStart` breaks every script referencing it.
-- Selector *level values* matter. `dzvents-weather-overlay-sample.txt` calls `switchSelector(30)` expecting Drizzle, `40` Storm, `50` Thunder, `60` Frost. Level is `10 * index` into the `|`-separated options string, so reordering `OVERLAY_OPTIONS` / `TRANSITION_OPTIONS` silently remaps existing automations. Append new entries; never insert.
-- How payload devices are *written* matters. The samples use `setDescription(json)` + `switchOn()` (custom app) and `updateText(seconds)` + `switchOn()` (sleep mode), i.e. they set the payload out-of-band and then trigger with a switch command. A unit whose `onCommand` branch reads the payload from `Command` will not see anything those scripts set — read `Devices[Unit].Description` / `.sValue` instead where the samples imply it.
+- **Device names matter.** dzVents resolves devices by `"<hardware name> - <device name>"`, e.g. `AWTRIXNG - Send Custom App`, `AWTRIX NG - Sleep Mode`, `AWTRIX NG - Overlay`, `AWTRIXNG - Power`. Renaming a device in `createDevices` breaks every script referencing it.
+- **Payload devices are push buttons whose payload lives in the description.** `UNIT_NOTIFICATION`, `UNIT_CUSTOMAPP`, `UNIT_SETTINGS`, `UNIT_RTTTL` and `UNIT_SLEEP` are `Type=244, Subtype=73, Switchtype=9` and read `Devices[Unit].Description`, because every real automation does `setDescription(payload)` then `switchOn()`. They must **not** be `TypeName="Text"` units that read the payload out of `Command` — dzVents `switchOn()` carries no payload, so those scripts would silently send nothing. `UNIT_SLEEP` additionally falls back to `sValue` for scripts that use `updateText()`.
+- **Selector level values matter.** `dzvents-weather-overlay-sample.txt` calls `switchSelector(30)` expecting Drizzle, `40` Storm, `50` Thunder, `60` Frost. Level is `10 * index` into `TRANSITION_NAMES` / `OVERLAY_NAMES`, so reordering either list silently remaps existing automations. Append only, never insert. Both lists deliberately reproduce the AWTRIX 3 plugin's ordering (`Off|Random|Slide|Dim|Zoom|Rotate|Pixelate|Curtain|Ripple|Blink|Reload|Fade` and `Off|Snow|Rain|Drizzle|Storm|Thunder|Frost`, with `Wind|Clouds` appended).
+- **`Brightness` "Off" means auto-brightness ON**, matching AWTRIX 3. It does not mean "dark".
+- **Custom apps default to the app name `Domoticz`** when the payload carries no `appname`. Changing that default orphans whatever the previous name pushed. An array payload creates indexed apps `Domoticz0..n`, which is how the multi-page automation works.
+- Feature parity with the AWTRIX 3 plugin also covers things easy to drop on a port: the humidity-derived comfort index in the `Temp+Hum` sValue, `BatteryLevel` on the `Temp+Hum` and `Power` devices, and the heartbeat pushing device state *back* into the selector/colour/brightness/overlay devices so the Domoticz UI tracks changes made on the panel itself.
 
 ## AWTRIX NG API mapping
 
@@ -59,15 +62,30 @@ Confirmed NG shapes relevant to this plugin:
 
 | Purpose | Endpoint | Body / fields |
 | --- | --- | --- |
-| Device + sensor state | `GET /api/v1/device` | `lightLevel` (0–100 %, *not* lux), `temperature`, `humidity`, `matrixPower`, `brightness`, `currentApp` |
+| Device + sensor state | `GET /api/v1/device` | `lightLevel` (0–100 %, explicitly *not* lux), `temperature`, `humidity`, `matrixPower`, `batteryPercent`, `brightness`, `currentApp` |
+| Display state | `GET /api/v1/display` | `power`, `brightness`, `overlay`, `overlaySettings` |
 | Power / overlay | `PATCH /api/v1/display` | `power`, `overlay` (name from `capabilities.overlays`, `null`/`""` clears), `overlaySettings` — **overlay lives here, not in settings** |
-| Settings | `PATCH /api/v1/settings` | `autoBrightness`, `brightness` (0–255), `transitionEffect` (name from `capabilities.transitions`), `textColor` (`"#RRGGBB"`), `appDurationMs`, `transitionDurationMs` |
+| Settings (r/w, same schema both ways) | `GET`/`PATCH /api/v1/settings` | `autoBrightness`, `brightness` (0–255), `transitionEffect` (name from `capabilities.transitions`), `textColor`, `appDurationMs`, `transitionDurationMs` |
 | Notification | `POST /api/v1/notifications` | pushed-app fields + `name`, `hold`, `stack`, `wakeup`, `sound`, `soundRtttl` |
 | Dismiss | `DELETE /api/v1/notifications/active` | — |
-| Custom app | `PUT /api/v1/apps/pushed/{name}` | object or array; array creates indexed instances |
+| Custom app | `PUT /api/v1/apps/pushed/{name}` | object or array; array creates indexed apps `{name}0..n` |
 | App rotation | `POST /api/v1/apps/next` / `/previous` | empty |
 | Audio | `POST /api/v1/audio/play` | exactly one of `sound`, `mp3`, `melody`, `track`, `rtttl`, `station`, `index`, `url` |
 | Sleep | `POST /api/v1/device/sleep` | `durationMs` (integer, **milliseconds**) |
-| Discover valid names | `GET /api/v1/capabilities` | effects, overlays, transitions, palettes |
+| Discover valid names | `GET /api/v1/capabilities` | `effects`, `overlays`, `transitions`, `palettes`, `audio`, `gpio` |
 
-Unused-but-available NG capabilities worth knowing about when asked to extend the plugin: `PUT /api/v1/display/moodlight`, `PUT/DELETE /api/v1/indicators/{1..3}`, `PUT /api/v1/apps/active`, `PUT /api/v1/apps/order`, Berry scripting via `/api/v1/apps/script/{name}`.
+Conventions that bite:
+
+- Colors are a union: `"#RRGGBB"` / `"RRGGBB"` / `[r,g,b]` / `["HSV",h,s,v]` on input, always `"#RRGGBB"` on output. `NullableColor` tracks `null` (inherit/off) separately from `#000000`.
+- All durations are integer **milliseconds** with an `...Ms` suffix.
+- `effect` / `overlay` / `transitionEffect` / `palette` names are matched case-insensitively but an unknown name is a hard **422**, and for array payloads nothing at all is stored. `onStart` therefore caches `/api/v1/capabilities` into `self.transitions` / `self.overlays` and `resolveName` rejects unsupported selector entries locally instead of firing a doomed request.
+- Pushed-app names must match `^[A-Za-z0-9_-]{1,32}$` or the request is a **400**; `customAppName` sanitises to exactly that.
+- An empty body or `{}` on `PUT /api/v1/apps/pushed/{name}` is a **422** — use the `DELETE` route to remove an app.
+- Request bodies must be `Content-Type: application/json` or the request is a **415**; `requests`' `json=` kwarg handles this, so don't switch to `data=`.
+
+Unused-but-available NG capabilities worth knowing about when asked to extend the plugin: `PUT /api/v1/display/moodlight`, `PUT/DELETE /api/v1/indicators/{1..3}`, `PUT /api/v1/apps/active`, `PUT /api/v1/apps/order`, `PUT /api/v1/audio/melodies/{name}`, `GET /api/v1/logs`, and Berry scripting via `/api/v1/apps/script/{name}`.
+
+
+## Testing a change without a device
+
+`plugin.py` has no import-time side effects beyond defining `_plugin`, so it can be exercised headless by stubbing `Domoticz` and `requests` in `sys.modules`, injecting `Parameters`/`Devices`/`Images` into the module namespace, and calling `onStart()` / `onCommand()` / `onHeartbeat()` directly. Driving a fake AWTRIX NG that enforces the real status codes (422 on unknown overlay/effect names, 400 on a bad app name, 415 on non-JSON) is the only practical way to check the request payloads before flashing anything at the panel.
