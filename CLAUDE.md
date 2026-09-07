@@ -10,12 +10,16 @@ Everything lives in `plugin.py`. `icons/`, `images/`, `samples/` are assets/docs
 
 ## Commands
 
-There is no test suite, no linter config, and no package manifest. CI (`.github/workflows/validate.yml`) runs exactly two checks, both reproducible locally:
+There is no package manifest. CI (`.github/workflows/validate.yml`) runs four checks, all reproducible locally:
 
 ```bash
 python .github/scripts/validate_plugin.py   # parses the XML docstring header of plugin.py
-python -m compileall .                      # syntax check
+python -m compileall -q .                   # syntax check
+ruff check .                                # lint
+python tests/test_plugin.py                 # offline behaviour tests
 ```
+
+`compileall` leaves `__pycache__` directories behind; they're gitignored.
 
 `validate_plugin.py` hardcodes `plugin.py` as its target and asserts the header has a `<plugin>` root with `key`/`name`/`author`/`version` attributes plus `<description>` and `<params>` children. It exits non-zero on failure.
 
@@ -39,7 +43,9 @@ Runtime dependency: `requests`.
 - *Actions* (next/prev app, dismiss) are push buttons (`Switchtype=9`) that fire a request and reset themselves.
 - *Payload devices* (`UNIT_NOTIFICATION`, `UNIT_CUSTOMAPP`, `UNIT_SETTINGS`, `UNIT_RTTTL`) carry a user-authored string that is forwarded to the device. `parsePushMessage` defines the three accepted forms (raw JSON object/array, `icon;text`, or bare text falling back to the `Mode1` default icon) — this format is documented in the README and relied on by the dzVents samples, so it is a compatibility surface.
 
-`UNIT_POWER` is bidirectional: commanded via `PATCH /api/v1/display`, and reconciled from the device state on each heartbeat.
+`UNIT_POWER` is bidirectional: commanded via `PATCH /api/v1/display`, and reconciled from the device state on each heartbeat. Colour devices (`UNIT_TEXTCOLOR`, `UNIT_MOODLIGHT`, the three indicators) share `commandColor` / `hexColor` / `confirmColor` — note that Domoticz hands colour to `onCommand` as a **JSON string, not a dict**, and expects the `Color=` it gets back to be JSON too (`str(dict)` emits single quotes and the colour is silently dropped).
+
+**`onHeartbeat` is on the plugin thread and must stay cheap.** Each request blocks for up to the 5s timeout, so an unplugged panel would otherwise stall Domoticz for 15s every 30s. The heartbeat therefore polls `/api/v1/device` first and, on failure, sets `skipTicks` to back off exponentially to ~8 minutes; `/api/v1/settings` and `/api/v1/display` are only read every `SLOW_POLL_TICKS` heartbeats since they exist purely to keep the UI in step.
 
 **All HTTP goes through `BasePlugin._request`**, which owns the base URL, optional `HTTPBasicAuth`, the 5s timeout, error logging, and the JSON-or-text-or-None return convention. It returns `None` on any failure, so callers must not assume a dict — `onHeartbeat` guards with `isinstance(stats, dict)`. Add new endpoint calls through this method rather than calling `requests` directly.
 
@@ -49,7 +55,7 @@ The user's existing Domoticz automations and the scripts in `samples/` must keep
 
 - **Device names matter.** dzVents resolves devices by `"<hardware name> - <device name>"`, e.g. `AWTRIXNG - Send Custom App`, `AWTRIX NG - Sleep Mode`, `AWTRIX NG - Overlay`, `AWTRIXNG - Power`. Renaming a device in `createDevices` breaks every script referencing it.
 - **Payload devices are push buttons whose payload lives in the description.** `UNIT_NOTIFICATION`, `UNIT_CUSTOMAPP`, `UNIT_SETTINGS`, `UNIT_RTTTL` and `UNIT_SLEEP` are `Type=244, Subtype=73, Switchtype=9` and read `Devices[Unit].Description`, because every real automation does `setDescription(payload)` then `switchOn()`. They must **not** be `TypeName="Text"` units that read the payload out of `Command` — dzVents `switchOn()` carries no payload, so those scripts would silently send nothing. `UNIT_SLEEP` additionally falls back to `sValue` for scripts that use `updateText()`.
-- **Selector level values matter.** `dzvents-weather-overlay-sample.txt` calls `switchSelector(30)` expecting Drizzle, `40` Storm, `50` Thunder, `60` Frost. Level is `10 * index` into `TRANSITION_NAMES` / `OVERLAY_NAMES`, so reordering either list silently remaps existing automations. Append only, never insert. Both lists deliberately reproduce the AWTRIX 3 plugin's ordering (`Off|Random|Slide|Dim|Zoom|Rotate|Pixelate|Curtain|Ripple|Blink|Reload|Fade` and `Off|Snow|Rain|Drizzle|Storm|Thunder|Frost`, with `Wind|Clouds` appended).
+- **Selector level values matter.** `dzvents-weather-overlay-sample.txt` calls `switchSelector(30)` expecting Drizzle, `40` Storm, `50` Thunder, `60` Frost. Level is `10 * index` into `TRANSITION_NAMES` / `OVERLAY_NAMES`, so reordering either list silently remaps existing automations. Append only, never insert. Indices 0–11 of `TRANSITION_NAMES` and all of `OVERLAY_NAMES` reproduce the AWTRIX 3 plugin's ordering; NG's eleven extra transitions are appended after `Fade`. NG ships exactly six weather overlays, so `OVERLAY_NAMES` is complete — don't invent entries (an unknown name is a hard 422).
 - **`Brightness` "Off" means auto-brightness ON**, matching AWTRIX 3. It does not mean "dark".
 - **Custom apps default to the app name `Domoticz`** when the payload carries no `appname`. Changing that default orphans whatever the previous name pushed. An array payload creates indexed apps `Domoticz0..n`, which is how the multi-page automation works.
 - Feature parity with the AWTRIX 3 plugin also covers things easy to drop on a port: the humidity-derived comfort index in the `Temp+Hum` sValue, `BatteryLevel` on the `Temp+Hum` and `Power` devices, and the heartbeat pushing device state *back* into the selector/colour/brightness/overlay devices so the Domoticz UI tracks changes made on the panel itself.
@@ -82,10 +88,17 @@ Conventions that bite:
 - Pushed-app names must match `^[A-Za-z0-9_-]{1,32}$` or the request is a **400**; `customAppName` sanitises to exactly that.
 - An empty body or `{}` on `PUT /api/v1/apps/pushed/{name}` is a **422** — use the `DELETE` route to remove an app.
 - Request bodies must be `Content-Type: application/json` or the request is a **415**; `requests`' `json=` kwarg handles this, so don't switch to `data=`.
+- **Validation is all-or-nothing and unknown keys are fatal.** AWTRIX 3 ignored keys it did not recognise; NG rejects the whole payload with 422 and names the field. This is why `_request` logs `response.text` on failure — that body is the only thing that identifies the offending key. Never strip it from the error path.
 
 Unused-but-available NG capabilities worth knowing about when asked to extend the plugin: `PUT /api/v1/display/moodlight`, `PUT/DELETE /api/v1/indicators/{1..3}`, `PUT /api/v1/apps/active`, `PUT /api/v1/apps/order`, `PUT /api/v1/audio/melodies/{name}`, `GET /api/v1/logs`, and Berry scripting via `/api/v1/apps/script/{name}`.
 
 
-## Testing a change without a device
+## Tests
 
-`plugin.py` has no import-time side effects beyond defining `_plugin`, so it can be exercised headless by stubbing `Domoticz` and `requests` in `sys.modules`, injecting `Parameters`/`Devices`/`Images` into the module namespace, and calling `onStart()` / `onCommand()` / `onHeartbeat()` directly. Driving a fake AWTRIX NG that enforces the real status codes (422 on unknown overlay/effect names, 400 on a bad app name, 415 on non-JSON) is the only practical way to check the request payloads before flashing anything at the panel.
+`tests/test_plugin.py` is the whole suite — plain asserts, no framework, run it with `python tests/test_plugin.py`. It stubs `Domoticz` and `requests` in `sys.modules`, injects `Parameters`/`Devices`/`Images` into the plugin's namespace, and drives a fake panel that enforces the real status codes (422 on unknown overlay/effect names or an empty body, 400 on a bad app name, 404 on a bad indicator id).
+
+It exists to pin the things that break automations *silently*: unit numbers, device names and types, selector level values, and the exact JSON sent to each endpoint. The last block asserts that no AWTRIX 3 field name (`BRI`, `TCOL`, `TEFF`, `OVERLAY`, `sleep`, …) can reach the panel from any unit — that class of bug produces a working-looking plugin that does nothing, so it's worth a regression test rather than a code review.
+
+When adding a device, add it to `EXPECTED_DEVICES` and assert its payload. A failure there usually means an existing automation would have broken too.
+
+`ruff.toml` exempts `plugin.py` from `F821` (the injected globals) and `E501` (the manifest tag and default RTTTL melody can't be wrapped), and disables `UP032` repo-wide because `str.format()` is the established style here.

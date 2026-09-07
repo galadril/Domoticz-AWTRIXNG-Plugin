@@ -1,5 +1,5 @@
 """
-<plugin key="AWTRIXNG" name="AWTRIX NG" author="Mark Heinis" version="2.0.1" wikilink="https://github.com/galadril/Domoticz-AWTRIXNG-Plugin/wiki" externallink="https://github.com/galadril/Domoticz-AWTRIXNG-Plugin">
+<plugin key="AWTRIXNG" name="AWTRIX NG" author="Mark Heinis" version="1.0.0" wikilink="https://github.com/galadril/Domoticz-AWTRIXNG-Plugin/wiki" externallink="https://github.com/galadril/Domoticz-AWTRIXNG-Plugin">
     <description>
         <h2>AWTRIX NG Plugin</h2><br/>
         Integrates an AWTRIX NG Smart Pixel Clock with Domoticz.<br/>
@@ -57,18 +57,44 @@ UNIT_OVERLAY = 12
 UNIT_TEXTCOLOR = 13
 UNIT_BRIGHTNESS = 14
 UNIT_SLEEP = 15
+UNIT_SWITCHAPP = 16
+UNIT_MOODLIGHT = 17
+UNIT_INDICATOR1 = 18
+UNIT_INDICATOR2 = 19
+UNIT_INDICATOR3 = 20
+UNIT_CLOCKLAYOUT = 21
+UNIT_SCROLL = 22
+UNIT_AUTOTRANSITION = 23
+
+INDICATOR_UNITS = {UNIT_INDICATOR1: 1, UNIT_INDICATOR2: 2, UNIT_INDICATOR3: 3}
 
 # Selector level == 10 * index into these lists. The order is a compatibility
 # contract with existing automations (see samples/) - only ever append.
-TRANSITION_NAMES = ["Off", "Random", "Slide", "Dim", "Zoom", "Rotate",
-                    "Pixelate", "Curtain", "Ripple", "Blink", "Reload", "Fade"]
-OVERLAY_NAMES = ["Off", "Snow", "Rain", "Drizzle", "Storm", "Thunder",
-                 "Frost", "Wind", "Clouds"]
+TRANSITION_NAMES = [
+    # Indices 0-11 keep the AWTRIX 3 ordering; do not reorder.
+    "Off", "Random", "Slide", "Dim", "Zoom", "Rotate",
+    "Pixelate", "Curtain", "Ripple", "Blink", "Reload", "Fade",
+    # Added by AWTRIX NG.
+    "Cover", "Uncover", "Split", "Blinds", "Blocks", "Flash",
+    "Diamond", "Wave", "Rain", "Melt", "Interlace",
+]
+# NG ships exactly these six weather overlays.
+OVERLAY_NAMES = ["Off", "Snow", "Rain", "Drizzle", "Storm", "Thunder", "Frost"]
+# Settings.scroll accepts the bare mode string as shorthand for {"mode": ...}.
+SCROLL_NAMES = ["Static", "Wrap", "Loop", "Bounce"]
+# Settings.timeMode is the clock layout, 0-6.
+CLOCK_LAYOUT_NAMES = ["Layout 0", "Layout 1", "Layout 2", "Layout 3",
+                      "Layout 4", "Layout 5", "Layout 6"]
 
 IMAGE_KEY = "AWTRIXNG"
 DEFAULT_APP_NAME = "Domoticz"
 DEFAULT_SLEEP_SECONDS = 60
 COLOR_WHITE = {"r": 255, "g": 255, "b": 255}
+
+# Sensors are read every heartbeat; settings and display state only exist to
+# keep the Domoticz UI in step with changes made on the panel itself, so they
+# are read every Nth heartbeat instead.
+SLOW_POLL_TICKS = 4
 
 
 def selectorOptions(names, offHidden):
@@ -89,6 +115,9 @@ class BasePlugin:
         # Firmware spelling of every supported name, keyed by lowercase name.
         self.transitions = {}
         self.overlays = {}
+        self.failures = 0
+        self.skipTicks = 0
+        self.slowTick = 0
 
     def onStart(self):
         debugLevel = int(Parameters["Mode6"])
@@ -197,6 +226,35 @@ class BasePlugin:
                             Type=244, Subtype=73, Switchtype=9, Image=image,
                             Description="Send the device into sleep mode for X seconds (input X in the description)").Create()
 
+        if UNIT_SWITCHAPP not in Devices:
+            Domoticz.Device(Name="Switch To App", Unit=UNIT_SWITCHAPP,
+                            Type=244, Subtype=73, Switchtype=9, Image=image,
+                            Description="Name of the app to jump to (see /api/v1/apps)").Create()
+
+        if UNIT_MOODLIGHT not in Devices:
+            Domoticz.Device(Name="Moodlight", Unit=UNIT_MOODLIGHT, TypeName="RGB", Image=image).Create()
+
+        for unit, corner in (
+            (UNIT_INDICATOR1, "Top"),
+            (UNIT_INDICATOR2, "Middle"),
+            (UNIT_INDICATOR3, "Bottom"),
+        ):
+            if unit not in Devices:
+                Domoticz.Device(Name="Indicator {}".format(corner), Unit=unit,
+                                TypeName="RGB", Image=image).Create()
+
+        if UNIT_CLOCKLAYOUT not in Devices:
+            Domoticz.Device(Name="Clock layout", Unit=UNIT_CLOCKLAYOUT, TypeName="Selector Switch",
+                            Options=selectorOptions(CLOCK_LAYOUT_NAMES, False), Image=image).Create()
+
+        if UNIT_SCROLL not in Devices:
+            Domoticz.Device(Name="Text scroll", Unit=UNIT_SCROLL, TypeName="Selector Switch",
+                            Options=selectorOptions(SCROLL_NAMES, False), Image=image).Create()
+
+        if UNIT_AUTOTRANSITION not in Devices:
+            Domoticz.Device(Name="Auto Transition", Unit=UNIT_AUTOTRANSITION,
+                            TypeName="Switch", Image=image).Create()
+
     def onStop(self):
         Domoticz.Log("AWTRIX NG plugin stopped")
 
@@ -227,6 +285,41 @@ class BasePlugin:
             return (Devices[Unit].Description or "").strip()
         except Exception:
             return ""
+
+    @staticmethod
+    def commandColor(Color):
+        """Domoticz hands colour to onCommand as a JSON string, not a dict."""
+        info = Color
+        if isinstance(info, str) and info:
+            try:
+                info = json.loads(info)
+            except ValueError:
+                return None
+        if isinstance(info, dict):
+            return {key: int(info.get(key, COLOR_WHITE[key])) for key in ("r", "g", "b")}
+        return None
+
+    @staticmethod
+    def hexColor(rgb):
+        return "#{:02X}{:02X}{:02X}".format(rgb["r"], rgb["g"], rgb["b"])
+
+    @staticmethod
+    def confirmColor(rgb):
+        # Domoticz parses this field as JSON, so it must not be a Python repr:
+        # str({...}) emits single quotes and the colour is silently dropped.
+        confirm = {"ColorMode": 3}
+        confirm.update(rgb)
+        return json.dumps(confirm)
+
+    def dimmerLevel(self, Unit, Command, Level, default=100):
+        """'On' arrives without a level, so fall back to the last one we stored."""
+        if Command != "On":
+            return max(0, min(int(Level), 100))
+        try:
+            previous = int(Devices[Unit].sValue)
+        except (TypeError, ValueError):
+            previous = 0
+        return previous if previous > 0 else default
 
     def parsePushMessage(self, message):
         """Accepts a JSON object/array, 'icon;text', or a bare message."""
@@ -326,23 +419,46 @@ class BasePlugin:
             newColor = self.selectedTextColor.copy()
         else:
             dimmerState = 1
-            colorInfo = Color
-            if isinstance(colorInfo, str) and colorInfo:
-                try:
-                    colorInfo = json.loads(colorInfo)
-                except ValueError:
-                    colorInfo = None
-            if isinstance(colorInfo, dict):
-                newColor = {key: colorInfo.get(key, COLOR_WHITE[key]) for key in ("r", "g", "b")}
+            newColor = self.commandColor(Color) or COLOR_WHITE.copy()
 
-        hexColor = "#{:02X}{:02X}{:02X}".format(newColor["r"], newColor["g"], newColor["b"])
-        self._request("PATCH", "/api/v1/settings", {"textColor": hexColor})
+        self._request("PATCH", "/api/v1/settings", {"textColor": self.hexColor(newColor)})
 
-        confirm = {"ColorMode": 3}
-        confirm.update(newColor)
-        Devices[UNIT_TEXTCOLOR].Update(nValue=dimmerState, sValue=str(dimmerLevel), Color=str(confirm))
+        Devices[UNIT_TEXTCOLOR].Update(nValue=dimmerState, sValue=str(dimmerLevel),
+                                       Color=self.confirmColor(newColor))
         if dimmerState:
             self.selectedTextColor.update(newColor)
+
+    def setMoodlight(self, Command, Level, Color):
+        if Command == "Off":
+            self._request("DELETE", "/api/v1/display/moodlight")
+            Devices[UNIT_MOODLIGHT].Update(nValue=0, sValue="0")
+            return
+
+        # Both fields are sticky on the panel, so only send what changed.
+        level = self.dimmerLevel(UNIT_MOODLIGHT, Command, Level)
+        payload = {"brightness": int(round(level * 255 / 100))}
+        rgb = self.commandColor(Color)
+        if rgb:
+            payload["color"] = self.hexColor(rgb)
+
+        self._request("PUT", "/api/v1/display/moodlight", payload)
+        Devices[UNIT_MOODLIGHT].Update(nValue=1, sValue=str(level),
+                                       Color=self.confirmColor(rgb) if rgb else Devices[UNIT_MOODLIGHT].Color)
+
+    def setIndicator(self, Unit, Command, Level, Color):
+        indicator = INDICATOR_UNITS[Unit]
+        if Command == "Off":
+            self._request("DELETE", "/api/v1/indicators/{}".format(indicator))
+            Devices[Unit].Update(nValue=0, sValue="0")
+            return
+
+        rgb = self.commandColor(Color) or self.commandColor(Devices[Unit].Color) or COLOR_WHITE.copy()
+        if rgb == {"r": 0, "g": 0, "b": 0}:
+            # A colour resolving to 0 switches the indicator off on the panel.
+            rgb = COLOR_WHITE.copy()
+        self._request("PUT", "/api/v1/indicators/{}".format(indicator), {"color": self.hexColor(rgb)})
+        Devices[Unit].Update(nValue=1, sValue=str(self.dimmerLevel(Unit, Command, Level)),
+                             Color=self.confirmColor(rgb))
 
     def setBrightness(self, Command, Level):
         # "Off" hands control back to the light sensor, matching the AWTRIX 3 plugin.
@@ -430,21 +546,69 @@ class BasePlugin:
         elif Unit == UNIT_SLEEP:
             self.sleep()
 
+        elif Unit == UNIT_SWITCHAPP:
+            name = self.description(Unit)
+            if not name:
+                Domoticz.Error("Description field is empty. Cannot switch app.")
+                return
+            self._request("PUT", "/api/v1/apps/active", {"name": name})
+
+        elif Unit == UNIT_MOODLIGHT:
+            self.setMoodlight(Command, Level, Color)
+
+        elif Unit in INDICATOR_UNITS:
+            self.setIndicator(Unit, Command, Level, Color)
+
+        elif Unit == UNIT_CLOCKLAYOUT:
+            index = int(Level / 10)
+            if 0 <= index < len(CLOCK_LAYOUT_NAMES):
+                self._request("PATCH", "/api/v1/settings", {"timeMode": index})
+                Devices[Unit].Update(nValue=Level, sValue=str(Level))
+
+        elif Unit == UNIT_SCROLL:
+            index = int(Level / 10)
+            if 0 <= index < len(SCROLL_NAMES):
+                self._request("PATCH", "/api/v1/settings", {"scroll": SCROLL_NAMES[index].lower()})
+                Devices[Unit].Update(nValue=Level, sValue=str(Level))
+
+        elif Unit == UNIT_AUTOTRANSITION:
+            state = Command.upper() == "ON"
+            self._request("PATCH", "/api/v1/settings", {"autoTransition": state})
+            Devices[Unit].Update(nValue=1 if state else 0, sValue="ON" if state else "OFF")
+
         else:
             Domoticz.Error("Unknown Unit in onCommand: {}".format(Unit))
 
     # ------------------------------------------------------------- heartbeat
 
     def onHeartbeat(self):
-        self.syncDeviceState()
-        self.syncSettings()
-        self.syncDisplay()
-
-    def syncDeviceState(self):
-        stats = self._request("GET", "/api/v1/device")
-        if not isinstance(stats, dict):
+        # Each request blocks the plugin thread for up to the 5s timeout, so an
+        # unplugged panel must not be retried at full cadence.
+        if self.skipTicks > 0:
+            self.skipTicks -= 1
             return
 
+        stats = self._request("GET", "/api/v1/device")
+        if not isinstance(stats, dict):
+            self.failures += 1
+            self.skipTicks = min(2 ** self.failures, 16) - 1
+            if self.failures == 1:
+                Domoticz.Log("AWTRIX NG is unreachable; backing off between retries")
+            return
+
+        if self.failures:
+            Domoticz.Log("AWTRIX NG is reachable again")
+            self.failures = 0
+
+        self.syncDeviceState(stats)
+
+        if self.slowTick <= 0:
+            self.slowTick = SLOW_POLL_TICKS
+            self.syncSettings()
+            self.syncDisplay()
+        self.slowTick -= 1
+
+    def syncDeviceState(self, stats):
         battery = stats.get("batteryPercent", 255)
 
         if "temperature" in stats and "humidity" in stats:
@@ -473,6 +637,21 @@ class BasePlugin:
             Devices[UNIT_POWER].Update(nValue=powerOn, sValue="ON" if powerOn else "OFF",
                                        BatteryLevel=battery)
 
+        # The panel echoes indicator state here, so the switches follow changes
+        # made over MQTT or from a script.
+        indicators = stats.get("indicators")
+        if isinstance(indicators, list):
+            for unit, indicator in INDICATOR_UNITS.items():
+                if indicator > len(indicators):
+                    continue
+                entry = indicators[indicator - 1]
+                if not isinstance(entry, dict):
+                    continue
+                on = 1 if entry.get("on") else 0
+                rgb = self.parseColor(entry.get("color"))
+                Devices[unit].Update(nValue=on, sValue="100" if on else "0",
+                                     Color=self.confirmColor(rgb) if rgb else Devices[unit].Color)
+
     def syncSettings(self):
         settings = self._request("GET", "/api/v1/settings")
         if not isinstance(settings, dict):
@@ -485,17 +664,31 @@ class BasePlugin:
                 level = names.index(effect.lower()) * 10
                 Devices[UNIT_TRANSITION].Update(nValue=level, sValue=str(level))
 
-        textColor = settings.get("textColor")
-        rgb = self.parseColor(textColor)
+        rgb = self.parseColor(settings.get("textColor"))
         if rgb:
             isWhite = rgb == COLOR_WHITE
-            confirm = {"ColorMode": 3}
-            confirm.update(rgb)
             Devices[UNIT_TEXTCOLOR].Update(nValue=0 if isWhite else 1,
                                            sValue="0" if isWhite else "50",
-                                           Color=str(confirm))
+                                           Color=self.confirmColor(rgb))
             if not isWhite:
                 self.selectedTextColor.update(rgb)
+
+        timeMode = settings.get("timeMode")
+        if isinstance(timeMode, int) and 0 <= timeMode < len(CLOCK_LAYOUT_NAMES):
+            level = timeMode * 10
+            Devices[UNIT_CLOCKLAYOUT].Update(nValue=level, sValue=str(level))
+
+        scroll = settings.get("scroll")
+        mode = scroll.get("mode") if isinstance(scroll, dict) else scroll
+        if isinstance(mode, str):
+            names = [n.lower() for n in SCROLL_NAMES]
+            if mode.lower() in names:
+                level = names.index(mode.lower()) * 10
+                Devices[UNIT_SCROLL].Update(nValue=level, sValue=str(level))
+
+        if "autoTransition" in settings:
+            auto = 1 if settings["autoTransition"] else 0
+            Devices[UNIT_AUTOTRANSITION].Update(nValue=auto, sValue="ON" if auto else "OFF")
 
         if "brightness" in settings or "autoBrightness" in settings:
             autoBri = bool(settings.get("autoBrightness", False))

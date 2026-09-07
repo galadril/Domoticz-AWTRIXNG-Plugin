@@ -7,4 +7,3 @@
 # Byte-compiled output, e.g. from the `python -m compileall .` CI step
 __pycache__/
 *.py[cod]
-/__pycache__
