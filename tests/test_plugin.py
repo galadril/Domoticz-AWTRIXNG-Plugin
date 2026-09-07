@@ -148,9 +148,6 @@ def fake_request(method, url, json=None, auth=None, timeout=None):
         if not body:
             return Response(422, {"error": "validationFailed"})
 
-    if path == "/api/v1/apps/active" and "name" not in (body or {}):
-        return Response(422, {"error": "validationFailed", "field": "name"})
-
     if path.startswith("/api/v1/indicators/"):
         if method == "PUT" and not body:
             return Response(422, {"error": "validationFailed"})
@@ -220,7 +217,8 @@ EXPECTED_DEVICES = {
     9: ("Dismiss Notification", None), 10: ("RTTTL", None),
     11: ("Transition effect", "Selector Switch"), 12: ("Overlay", "Selector Switch"),
     13: ("Text color", "RGB"), 14: ("Brightness", "Dimmer"), 15: ("Sleep Mode", None),
-    16: ("Switch To App", None), 17: ("Moodlight", "RGB"),
+    # 16 is retired and must stay empty.
+    17: ("Moodlight", "RGB"),
     18: ("Indicator Top", "RGB"), 19: ("Indicator Middle", "RGB"),
     20: ("Indicator Bottom", "RGB"), 21: ("Clock layout", "Selector Switch"),
     22: ("Text scroll", "Selector Switch"), 23: ("Auto Transition", "Switch"),
@@ -232,10 +230,11 @@ for unit, (name, typename) in EXPECTED_DEVICES.items():
 
 # The payload devices must be push buttons reading their description, because
 # dzVents does setDescription(...) then switchOn() and carries no payload.
-for unit in (4, 5, 6, 7, 8, 9, 10, 15, 16):
+for unit in (4, 5, 6, 7, 8, 9, 10, 15):
     equal("unit {} is a push button".format(unit),
           (DEVICES[unit].Type, DEVICES[unit].Subtype, DEVICES[unit].Switchtype),
           (244, 73, 9))
+check("retired unit 16 is not recreated", 16 not in DEVICES)
 
 equal("overlay selector entries", DEVICES[12].Options["LevelNames"],
       "Off|Snow|Rain|Drizzle|Storm|Thunder|Frost")
@@ -244,11 +243,36 @@ check("transition selector keeps AWTRIX 3 order",
           "Off|Random|Slide|Dim|Zoom|Rotate|Pixelate|Curtain|Ripple|Blink|Reload|Fade"))
 
 print("\n[custom app] the main automation: array via description, no appname")
-payload = [{"text": "21.4C", "icon": 2355}, {"text": "412W", "icon": 95}]
-method, path, body = only(press(5, json.dumps(payload)))
+# The real dzVents payload: Lua numbers serialise as JSON numbers, and NG
+# *ignores* a non-string icon instead of rejecting it, so an uncoerced payload
+# renders the text with no icon and no error.
+REAL_PAYLOAD = ('[{"icon":2355,"text":"24.8C"},{"icon":95,"text":"0W"},'
+                '{"icon":18191,"text":"440.0L"},{"icon":20121,"text":"Medium"},'
+                '{"icon":7627,"text":"Standby"},{"icon":64162,"text":"22.8C"},'
+                '{"icon":54633,"text":"0.62 m3"}]')
+method, path, body = only(press(5, REAL_PAYLOAD))
 equal("method", method, "PUT")
 equal("path", path, "/api/v1/apps/pushed/Domoticz")
-equal("payload reaches the panel untouched", body, payload)
+equal("every numeric icon is coerced to a string",
+      [entry["icon"] for entry in body],
+      ["2355", "95", "18191", "20121", "7627", "64162", "54633"])
+equal("text is untouched", [entry["text"] for entry in body],
+      ["24.8C", "0W", "440.0L", "Medium", "Standby", "22.8C", "0.62 m3"])
+check("no numeric icon survives anywhere in the payload",
+      not re.search(r'"icon":\s*\d', json.dumps(body)))
+
+equal("a string icon is left alone", only(press(5, '{"icon": "2355", "text": "x"}'))[2]["icon"], "2355")
+equal("numeric icon coerced on notifications too",
+      only(press(4, '{"icon": 9766, "text": "600 L"}'))[2]["icon"], "9766")
+check("inline base64 icons are not mangled",
+      only(press(5, json.dumps({"icon": "R0lGODlh" * 10, "text": "x"})))[2]["icon"].startswith("R0lGODlh"))
+
+# NG takes draw commands as arrays with full names, not AWTRIX 3's
+# {"dp": [x, y, colour]} objects; a frame from the animation sample must
+# survive the icon pass untouched.
+FRAME = '{"draw":[["pixels","#971B23",14,3,15,3,13,4],["pixel",9,3,"#FFFF00"]]}'
+equal("array-form draw commands pass through untouched",
+      only(press(5, FRAME))[2], json.loads(FRAME))
 
 method, path, body = only(press(5, '[{"appname": "My Room!!", "text": "x"}]'))
 equal("appname sanitised into the path", path, "/api/v1/apps/pushed/MyRoom")
@@ -264,7 +288,7 @@ equal("empty description sends nothing", CALLS, [])
 
 print("\n[notifications] all three description forms")
 equal("json form", only(press(4, '{"text": "600 L", "icon": 9766}'))[2],
-      {"text": "600 L", "icon": 9766})
+      {"text": "600 L", "icon": "9766"})
 equal("icon;text form", only(press(4, "9766;Check it!"))[2],
       {"icon": "9766", "text": "Check it!"})
 equal("plain text uses the default icon", only(press(4, "Hello, AWTRIX!"))[2],
@@ -309,8 +333,6 @@ equal("rtttl", only(press(10, "Simpsons:d=4,o=5,b=160:c.6"))[:3],
       ("POST", "/api/v1/audio/play", {"rtttl": "Simpsons:d=4,o=5,b=160:c.6"}))
 equal("next app", only(press(7))[:2], ("POST", "/api/v1/apps/next"))
 equal("previous app", only(press(8))[:2], ("POST", "/api/v1/apps/previous"))
-equal("switch to app", only(press(16, "Time"))[:3],
-      ("PUT", "/api/v1/apps/active", {"name": "Time"}))
 
 # Sleep takes seconds from the description, or from sValue for updateText().
 equal("sleep from description converts to ms", only(press(15, "1800"))[:3],

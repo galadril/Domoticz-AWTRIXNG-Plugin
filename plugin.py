@@ -57,7 +57,8 @@ UNIT_OVERLAY = 12
 UNIT_TEXTCOLOR = 13
 UNIT_BRIGHTNESS = 14
 UNIT_SLEEP = 15
-UNIT_SWITCHAPP = 16
+# 16 was a "Switch To App" push button. Retired - do not reuse the number, a
+# reinstall would rewire it to whatever takes its place.
 UNIT_MOODLIGHT = 17
 UNIT_INDICATOR1 = 18
 UNIT_INDICATOR2 = 19
@@ -226,11 +227,6 @@ class BasePlugin:
                             Type=244, Subtype=73, Switchtype=9, Image=image,
                             Description="Send the device into sleep mode for X seconds (input X in the description)").Create()
 
-        if UNIT_SWITCHAPP not in Devices:
-            Domoticz.Device(Name="Switch To App", Unit=UNIT_SWITCHAPP,
-                            Type=244, Subtype=73, Switchtype=9, Image=image,
-                            Description="Name of the app to jump to (see /api/v1/apps)").Create()
-
         if UNIT_MOODLIGHT not in Devices:
             Domoticz.Device(Name="Moodlight", Unit=UNIT_MOODLIGHT, TypeName="RGB", Image=image).Create()
 
@@ -335,6 +331,27 @@ class BasePlugin:
             return {"icon": icon.strip(), "text": text.strip()}
         return {"icon": self.iconId, "text": message}
 
+    @staticmethod
+    def normaliseIcons(payload):
+        """Coerce a numeric `icon` to the string AWTRIX NG requires.
+
+        NG resolves `icon` as an ID string (or inline base64 over 64 chars) and
+        **ignores a non-string icon** rather than rejecting the payload, so a
+        numeric one renders the text with no icon and no error at all. dzVents
+        serialises Lua numbers as JSON numbers and AWTRIX 3 accepted those, so
+        convert here instead of making every existing script change.
+        """
+        entries = payload if isinstance(payload, list) else [payload]
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            icon = entry.get("icon")
+            if isinstance(icon, bool) or not isinstance(icon, (int, float)):
+                continue
+            entry["icon"] = str(int(icon))
+            Domoticz.Debug("Coerced numeric icon {} to {!r}".format(icon, entry["icon"]))
+        return payload
+
     def customAppName(self, payload):
         """Pull 'appname' out of the payload, sanitised for use in the URL path."""
         entries = payload if isinstance(payload, list) else [payload]
@@ -357,13 +374,13 @@ class BasePlugin:
     def sendNotification(self, payload):
         if payload is None:
             return
-        self._request("POST", "/api/v1/notifications", payload)
+        self._request("POST", "/api/v1/notifications", self.normaliseIcons(payload))
 
     def sendCustomApp(self, payload):
         if payload is None:
             return
         name = self.customAppName(payload)
-        self._request("PUT", "/api/v1/apps/pushed/{}".format(name), payload)
+        self._request("PUT", "/api/v1/apps/pushed/{}".format(name), self.normaliseIcons(payload))
 
     def sendSettings(self, message):
         try:
@@ -545,13 +562,6 @@ class BasePlugin:
 
         elif Unit == UNIT_SLEEP:
             self.sleep()
-
-        elif Unit == UNIT_SWITCHAPP:
-            name = self.description(Unit)
-            if not name:
-                Domoticz.Error("Description field is empty. Cannot switch app.")
-                return
-            self._request("PUT", "/api/v1/apps/active", {"name": name})
 
         elif Unit == UNIT_MOODLIGHT:
             self.setMoodlight(Command, Level, Color)

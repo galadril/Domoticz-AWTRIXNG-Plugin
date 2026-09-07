@@ -1,3 +1,10 @@
+-- Sleeps the AWTRIX NG after a period of no motion.
+--
+-- The duration is in seconds and goes in the device text or description;
+-- the plugin converts it to the milliseconds the NG API expects.
+--
+-- Replace 'AWTRIXNG' below with whatever you named the hardware in
+-- Setup -> Hardware.
 return {
     active = true,
 
@@ -22,8 +29,8 @@ return {
 
     execute = function(domoticz, item)
         local motionSensor = domoticz.devices('Kantoor - BewegingsSensor')
-        local sleepDevice = domoticz.devices('AWTRIX NG - Sleep Mode')
-        local powerDevice = domoticz.devices('AWTRIX NG - Power')
+        local sleepDevice = domoticz.devices('AWTRIXNG - Sleep Mode')
+        local powerDevice = domoticz.devices('AWTRIXNG - Power')
         local sleepDuration = 1800 -- Sleep duration: 30 minutes
         local noMotionThreshold = 10 -- Threshold in minutes for inactivity
 

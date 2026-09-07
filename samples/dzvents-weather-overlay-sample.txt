@@ -1,4 +1,7 @@
 -- dzVents script to set AWTRIX NG clock overlay based on weather
+--
+-- Replace 'AWTRIXNG' below with whatever you named the hardware in
+-- Setup -> Hardware.
 return {
     active = true, -- Set script as active
 
@@ -64,7 +67,7 @@ return {
         end
 
         -- Fetch the AWTRIX NG selector switch for overlay
-        local awtrixOverlaySelector = domoticz.devices("AWTRIX NG - Overlay")
+        local awtrixOverlaySelector = domoticz.devices("AWTRIXNG - Overlay")
 
         if not awtrixOverlaySelector then
             domoticz.log("AWTRIX NG overlay selector switch not found!", domoticz.LOG_ERROR)

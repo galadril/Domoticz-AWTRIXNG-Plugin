@@ -86,11 +86,12 @@ Conventions that bite:
 - All durations are integer **milliseconds** with an `...Ms` suffix.
 - `effect` / `overlay` / `transitionEffect` / `palette` names are matched case-insensitively but an unknown name is a hard **422**, and for array payloads nothing at all is stored. `onStart` therefore caches `/api/v1/capabilities` into `self.transitions` / `self.overlays` and `resolveName` rejects unsupported selector entries locally instead of firing a doomed request.
 - Pushed-app names must match `^[A-Za-z0-9_-]{1,32}$` or the request is a **400**; `customAppName` sanitises to exactly that.
+- **`icon` must be a string** (an ID = filename without extension, or inline base64 over 64 chars). A non-string `icon` is *ignored* rather than rejected, so a numeric one from dzVents renders text with no icon and no error — the exact bug class that motivates the tests. `normaliseIcons` coerces it on both the notification and pushed-app paths; don't remove it. A missing icon file also falls back to the icon-less layout silently, so "no icon" has two possible causes.
 - An empty body or `{}` on `PUT /api/v1/apps/pushed/{name}` is a **422** — use the `DELETE` route to remove an app.
 - Request bodies must be `Content-Type: application/json` or the request is a **415**; `requests`' `json=` kwarg handles this, so don't switch to `data=`.
 - **Validation is all-or-nothing and unknown keys are fatal.** AWTRIX 3 ignored keys it did not recognise; NG rejects the whole payload with 422 and names the field. This is why `_request` logs `response.text` on failure — that body is the only thing that identifies the offending key. Never strip it from the error path.
 
-Unused-but-available NG capabilities worth knowing about when asked to extend the plugin: `PUT /api/v1/display/moodlight`, `PUT/DELETE /api/v1/indicators/{1..3}`, `PUT /api/v1/apps/active`, `PUT /api/v1/apps/order`, `PUT /api/v1/audio/melodies/{name}`, `GET /api/v1/logs`, and Berry scripting via `/api/v1/apps/script/{name}`.
+Unused-but-available NG capabilities worth knowing about when asked to extend the plugin: `PUT /api/v1/apps/order`, `PUT /api/v1/audio/melodies/{name}`, `POST /api/v1/audio/stop`, `PUT /api/v1/audio/stations`, `GET /api/v1/logs`, and Berry scripting via `/api/v1/apps/script/{name}`. `PUT /api/v1/apps/active` was tried as a "Switch To App" push button and removed as not useful — unit 16 is retired and must not be reused.
 
 
 ## Tests

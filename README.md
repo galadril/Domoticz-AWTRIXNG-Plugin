@@ -8,7 +8,7 @@
 
 Adds your AWTRIX NG panel to Domoticz as a set of virtual devices, so you can push notifications and custom apps from dzVents, Blockly or the Domoticz UI, control the display, and read the panel's sensors back into Domoticz.
 
-> This plugin targets the **AWTRIX NG `/api/v1` HTTP API**. It is not compatible with AWTRIX 3 firmware — see [Migrating from AWTRIX 3](#migrating-from-awtrix-3) if you are coming from the older plugin.
+> This plugin targets the **AWTRIX NG `/api/v1` HTTP API** and is not compatible with AWTRIX 3 firmware.
 
 ---
 
@@ -42,7 +42,7 @@ Adds your AWTRIX NG panel to Domoticz as a set of virtual devices, so you can pu
 
 ## Devices
 
-The plugin creates 23 devices. Sensors are polled every 30 seconds and panel settings every two minutes, so changes you make on the device itself — or over MQTT, or from a script — are reflected back into Domoticz.
+The plugin creates 22 devices. Sensors are polled every 30 seconds and panel settings every two minutes, so changes you make on the device itself — or over MQTT, or from a script — are reflected back into Domoticz.
 
 ### Sensors — read from the panel
 
@@ -58,7 +58,7 @@ The plugin creates 23 devices. Sensors are polled every 30 seconds and panel set
 | **Power** | Turns the matrix on and off. |
 | **Brightness** | Dimmer, 1–100 %. Switching it **Off** hands brightness control back to the light sensor (auto-brightness) rather than making the panel dark. |
 | **Text color** | Global text colour. Switching it **Off** restores white. |
-| **Transition effect** | Selector for the effect used between apps — the eleven AWTRIX 3 effects plus the eleven new NG ones. |
+| **Transition effect** | Selector over all 22 transitions the panel can use between apps. |
 | **Overlay** | Selector for the weather overlay drawn over the clock: Snow, Rain, Drizzle, Storm, Thunder, Frost. |
 | **Auto Transition** | Switching this off freezes the rotation on the current app. |
 | **Clock layout** | Selector over the seven built-in clock layouts. |
@@ -86,7 +86,6 @@ These read their payload from the device's **description** and act when the butt
 | **Send Settings** | A JSON object of panel settings. |
 | **RTTTL** | An RTTTL melody string. |
 | **Sleep Mode** | A number of seconds to sleep. |
-| **Switch To App** | The name of an app to jump to, as listed by `GET /api/v1/apps`. |
 
 ---
 
@@ -154,6 +153,8 @@ Icons must be uploaded to the panel itself; the plugin only references them by I
 
 The default Domoticz icon is **39762**. See the [icons guide](https://blueforcer.github.io/awtrix-ng/guides/icons/) for how to upload them, and the [icon editor](https://blueforcer.github.io/awtrix-ng/guides/icon-editor/) for drawing your own. Icon IDs and files carry over unchanged from AWTRIX 3.
 
+An icon ID is the file name without its extension, so `2355.jpg` on the panel is `"icon": "2355"`. AWTRIX NG expects that as a **string** and *ignores* a numeric `icon` without raising an error, which shows up as text rendering correctly with the icon column missing. Because dzVents serialises Lua numbers as JSON numbers, the plugin converts a numeric `icon` for you — `{"icon": 2355}` and `{"icon": "2355"}` both work.
+
 ---
 
 ## Samples
@@ -177,32 +178,16 @@ There are also community flows for Domoticz on the [AWTRIX Flows site](https://f
 
 ---
 
-## Migrating from AWTRIX 3
-
-Device names, selector positions and the description-then-switch workflow are unchanged from the AWTRIX 3 plugin, so existing automations keep working after you point them at the new hardware name. What does need attention is the **payload JSON inside your scripts**, because NG revised its schema:
-
-- **Unknown keys are now fatal.** AWTRIX 3 ignored keys it did not recognise; NG rejects the entire payload with `422` and names the offending field. Nothing is stored — an array payload is all-or-nothing.
-- **Durations are milliseconds** and gained an `Ms` suffix: `duration: 10` becomes `durationMs: 10000`.
-- **`color` became `textColor`.**
-- **`pushIcon: 0|1|2` became `iconMode: "fixed"|"pushOnce"|"push"`.**
-- **`save` and `topText` are gone.** Pushed apps are RAM-only; persistent content belongs in a [script](https://blueforcer.github.io/awtrix-ng/guides/scripting/).
-- **Settings keys are all renamed** — `BRI` → `brightness`, `TCOL` → `textColor`, `TEFF` → `transitionEffect`, `ATIME` → `appDurationMs`, and so on. There is no compatibility shim.
-
-Set **Debug** to *All* while migrating: the plugin logs the panel's `422` response including the field that tripped. The upstream [migration guide](https://blueforcer.github.io/awtrix-ng/guides/migrating-from-awtrix3/) covers the firmware side.
-
-The **Overlay** selector gained no entries and lost none: NG ships the same six weather overlays. The **Transition effect** selector keeps the AWTRIX 3 entries in their original positions and appends the eleven new NG effects after them, so existing `switchSelector(level)` calls still pick the same effect.
-
----
-
 ## Troubleshooting
 
 | Symptom | Check |
 | --- | --- |
 | Nothing happens when a push button fires | The payload goes in the device **description**, not its name or text. dzVents also needs `127.0.0.*` trusted under Setup → Settings → Security. |
-| `422 validationFailed` in the log | The response names the offending `field`. Usually an AWTRIX 3 key that NG renamed — see [Migrating from AWTRIX 3](#migrating-from-awtrix-3). |
+| `422 validationFailed` in the log | Your payload carries a key NG does not know, and the response names the offending `field`. NG rejects the whole payload rather than ignoring the key, so nothing is stored. |
 | `400 invalidName` | An `appname` outside `A–Z a–z 0–9 _ -` or longer than 32 characters. The plugin strips invalid characters and logs what it used. |
 | No Lux or Temp+Hum readings | The panel only reports these when the matching sensor is fitted. The devices stay at their last value. |
 | Transition or overlay logged as unsupported | Your firmware build's `GET /api/v1/capabilities` does not list it. |
+| Text appears but the icon does not | The icon is not on the panel. Check `GET /api/v1/files?dir=/ICONS` — a missing icon falls back to the icon-less layout silently. |
 | `AWTRIX NG is unreachable` then long silence | Expected. The plugin backs off exponentially to about eight minutes between retries so a powered-down panel does not stall Domoticz, and logs again once it reconnects. |
 
 ## Development
