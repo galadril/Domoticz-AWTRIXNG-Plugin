@@ -4,7 +4,7 @@ import sys
 def extract_plugin_header(file_path):
     """Extract the XML plugin header from a specified file."""
     plugin_header = []
-    with open(file_path, "r") as f:
+    with open(file_path) as f:
         lines = f.readlines()
         header_started = False
         for line in lines:
@@ -28,28 +28,28 @@ def validate_plugin_structure(plugin_data):
         # Parse the plugin data
         root = ET.fromstring(plugin_data)
         print("INFO: XML parsed successfully.")
-        
+
         # Check for the 'plugin' root element
         print(f"DEBUG: Checking if root element is 'plugin': Found '{root.tag}'")
         assert root.tag == 'plugin', "'plugin' tag not found"
-        
+
         # Required attributes for the <plugin> tag
         required_attributes = ['key', 'name', 'author', 'version']
         for attr in required_attributes:
             value = root.attrib.get(attr)
             print(f"DEBUG: Checking for attribute '{attr}': Found '{value}'")
             assert value, f"Attribute '{attr}' is missing in 'plugin' tag"
-        
+
         # Check for <description> tag
         description = root.find('description')
         print(f"DEBUG: Checking for 'description' element: {'Found' if description is not None else 'Not found'}")
         assert description is not None, "'description' tag not found"
-        
+
         # Check for <params> tag and required child <param> elements
         params = root.find('params')
         print(f"DEBUG: Checking for 'params' element: {'Found' if params is not None else 'Not found'}")
         assert params is not None, "'params' tag not found"
-        
+
         print("INFO: Plugin structure is valid.")
         sys.stdout.flush()
         return True
@@ -69,7 +69,7 @@ def validate_plugin_structure(plugin_data):
 
 if __name__ == "__main__":
     file_path = "plugin.py"
-    
+
     plugin_data = extract_plugin_header(file_path)
     if plugin_data:
         print("INFO: Extracted plugin header:")

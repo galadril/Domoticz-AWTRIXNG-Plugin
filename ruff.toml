@@ -1,0 +1,13 @@
+# Domoticz injects Parameters, Devices and Images into the plugin namespace at
+# load time, so they are undefined names as far as any linter can tell.
+line-length = 140
+
+[lint]
+select = ["E", "F", "W", "B", "UP"]
+# str.format() is the established style across the plugin; leave it alone.
+ignore = ["UP032"]
+
+[lint.per-file-ignores]
+# F821: the injected globals above.
+# E501: the <plugin> manifest tag and the default RTTTL melody cannot be wrapped.
+"plugin.py" = ["F821", "E501"]

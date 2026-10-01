@@ -1,3 +1,7 @@
+-- Advances the AWTRIX NG app rotation on a timer.
+--
+-- Replace 'AWTRIXNG' below with whatever you named the hardware in
+-- Setup -> Hardware.
 return {
     -- The script is active
     active = true,
@@ -17,7 +21,7 @@ return {
 
     -- Event execution when the timer triggers the script
     execute = function(domoticz)
-        local appNextDevice = domoticz.devices('AWTRIX NG - Next App')
+        local appNextDevice = domoticz.devices('AWTRIXNG - Next App')
         appNextDevice.switchOn()
     end
 }

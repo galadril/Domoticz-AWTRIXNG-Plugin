@@ -1,3 +1,12 @@
+-- Pushes a rotating set of Domoticz device states to the AWTRIX NG.
+--
+-- An array payload creates indexed apps Domoticz0..n, which is how the
+-- multi-page rotation works. Icon IDs are the file name without the
+-- extension; the plugin converts the numbers below to the strings the NG
+-- API expects, and the icons must already be uploaded to the panel.
+--
+-- Replace 'AWTRIXNG' below with whatever you named the hardware in
+-- Setup -> Hardware.
 return {
     -- The script is active
     active = true,
@@ -109,12 +118,12 @@ return {
             local statusesJSON = domoticz.utils.toJSON(statuses)
             domoticz.log("Sending statuses to AWTRIX (multiApp): " .. statusesJSON, domoticz.LOG_INFO)
             
-            local appDevice = domoticz.devices('AWTRIX NG - Send Custom App')
+            local appDevice = domoticz.devices('AWTRIXNG - Send Custom App')
             if appDevice then
                 appDevice.setDescription(statusesJSON)
                 appDevice.switchOn().afterSec(2)
             else
-                domoticz.log("AWTRIX NG - Send Custom App device not found", domoticz.LOG_ERROR)
+                domoticz.log("AWTRIXNG - Send Custom App device not found", domoticz.LOG_ERROR)
             end
         else
             -- SingleApp: Cycle through statuses
@@ -131,12 +140,12 @@ return {
             local selectedStatus = statuses[currentIndex + 1]
             domoticz.log(string.format("Sending single status to AWTRIX (singleApp): %s", domoticz.utils.toJSON(selectedStatus)), domoticz.LOG_INFO)
 
-            local appDevice = domoticz.devices('AWTRIX NG - Send Custom App')
+            local appDevice = domoticz.devices('AWTRIXNG - Send Custom App')
             if appDevice then
                 appDevice.setDescription(domoticz.utils.toJSON(selectedStatus))
                 appDevice.switchOn().afterSec(2)
             else
-                domoticz.log("AWTRIX NG - Send Custom App device not found", domoticz.LOG_ERROR)
+                domoticz.log("AWTRIXNG - Send Custom App device not found", domoticz.LOG_ERROR)
             end
 
             -- Update the index for the next cycle
