@@ -16,7 +16,7 @@ return {
 
     execute = function(domoticz)
         -- Fetch the weather device
-        local weatherDevice = domoticz.devices("Buiten temperatuur") -- 'Your outside weather device'
+        local weatherDevice = domoticz.devices("Outside Temperature") -- 'Your outside weather device'
         if not weatherDevice then
             domoticz.log("Weather device not found!", domoticz.LOG_ERROR)
             return

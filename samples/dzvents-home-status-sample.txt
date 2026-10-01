@@ -1,0 +1,888 @@
+-- name: AWTRIX NG Home Status
+-- summary: Generic home status dashboard using native AWTRIX NG draw commands.
+--          Works on any AWTRIX NG panel size (e.g. TC001 32x8, TC002 52x16)
+--          by adjusting the PANEL_W / PANEL_H constants below.
+-- author: Galadril
+-- tags: awtrix, awtrix-ng, tc001, tc002, domoticz, home, status
+-- panel: generic (tested on 32x8 and 52x16)
+
+-- AWTRIX NG Home Status -> generic panel
+--
+-- Layout (automatically derived from PANEL_W / PANEL_H):
+--
+--   x 0..(ICON_W-1)        icon (8x8 or 16x16 depending on panel height)
+--   x ICON_W               1px gap
+--   x CONTENT_X..GRAPH_END graph (only drawn if there is enough room)
+--   x VALUE_X..PANEL_W-1   value area
+--
+--   y 0..~6                label (skipped on very small/8px-high panels)
+--   y VALUE_Y..            graph/value
+--   y PANEL_H-1            progress accent (only on panels taller than 8px)
+--
+-- Uses native AWTRIX NG:
+--
+--   icons
+--   draw
+--
+-- No layout.regions.
+-- No appname field.
+--
+-- The payload is sent as an array. The AWTRIX NG plugin handles
+-- the pushed-app name.
+--
+-- CONFIGURE ME:
+--   1. Set PANEL_W / PANEL_H to match your device (e.g. 32x8 for TC001,
+--      52x16 for TC002).
+--   2. Edit the "devices" table below with your own Domoticz device
+--      names, icons and value types.
+
+return {
+    active = true,
+
+    on = {
+        timer = {
+            'every 1 minutes'
+        }
+    },
+
+    data = {
+        series = { initial = {} }
+    },
+
+    logging = {
+        level = domoticz.LOG_INFO,
+        marker = "AWTRIXNG_HOME_STATUS"
+    },
+
+    execute = function(domoticz)
+
+        ------------------------------------------------------------------
+        -- Only update while AWTRIXNG is powered on
+        ------------------------------------------------------------------
+
+        local AWTRIXNGPower =
+            domoticz.devices("AWTRIXNG - Power")
+
+        if not AWTRIXNGPower
+            or AWTRIXNGPower.state ~= "On" then
+
+            domoticz.log(
+                "AWTRIXNG display is off. Skipping status update.",
+                domoticz.LOG_DEBUG
+            )
+
+            return
+        end
+
+        ------------------------------------------------------------------
+        -- Panel geometry
+        --
+        -- Adjust these two values to match your AWTRIX NG panel.
+        -- Everything else in this script is derived from them, so the
+        -- same script works on a 32x8 (TC001), a 52x16 (TC002) or any
+        -- other AWTRIX NG resolution.
+        ------------------------------------------------------------------
+
+        local PANEL_W = 52
+        local PANEL_H = 16
+
+        -- Use a 16x16 icon on panels that are tall enough, otherwise 8x8.
+        local ICON_W = (PANEL_H >= 16) and 16 or 8
+        local GAP = 1
+
+        local CONTENT_X = ICON_W + GAP
+        local CONTENT_W = PANEL_W - CONTENT_X
+
+        local LABEL_Y = 0
+
+        -- Leave a row for the label only if the panel is tall enough.
+        local HAS_LABEL_ROW = PANEL_H >= 16
+        local VALUE_Y = HAS_LABEL_ROW and 8 or 0
+        local VALUE_H = PANEL_H - VALUE_Y - (HAS_LABEL_ROW and 1 or 0)
+
+        -- Reserve the bottom row for a progress accent only on taller panels.
+        local HAS_ACCENT_ROW = PANEL_H >= 16
+        local ACCENT_Y = PANEL_H - 1
+
+        if HAS_ACCENT_ROW then
+            VALUE_H = VALUE_H - 1
+        end
+
+        if VALUE_H < 1 then
+            VALUE_H = 1
+        end
+
+        -- Split the content area into a graph (roughly 40%) and a value
+        -- area (roughly 60%), with a 1px gap between them. On very narrow
+        -- panels the graph is skipped entirely.
+        local GRAPH_X = CONTENT_X
+        local GRAPH_W = math.floor(CONTENT_W * 0.4)
+        local MIN_GRAPH_W = 8
+
+        local SHOW_GRAPH = GRAPH_W >= MIN_GRAPH_W
+
+        local VALUE_X
+        local VALUE_W
+
+        if SHOW_GRAPH then
+            VALUE_X = GRAPH_X + GRAPH_W + 1
+            VALUE_W = PANEL_W - VALUE_X
+        else
+            GRAPH_W = 0
+            VALUE_X = CONTENT_X
+            VALUE_W = CONTENT_W
+        end
+
+        ------------------------------------------------------------------
+        -- Colours
+        ------------------------------------------------------------------
+
+        local DIM = "#6E6E6E"
+        local WHITE = "#FFFFFF"
+
+        local GRAPH_COLOR = "#274A33"
+
+        local PROGRESS_COLOR = "#00C8FF"
+        local PROGRESS_TRACK = "#141414"
+
+        ------------------------------------------------------------------
+        -- Domoticz devices
+        --
+        -- Add/remove/edit entries here to match your own setup.
+        --   device : exact Domoticz device name
+        --   id     : unique key used to persist graph history
+        --   name   : short label shown on the panel
+        --   icon   : AWTRIX NG icon id (see awtrix icon list)
+        --   type   : temperature | power | water | gas | selector | text | switch
+        --   graph  : true to keep a rolling history + mini graph
+        --   progress: true to show a bottom progress bar (selector level %)
+        ------------------------------------------------------------------
+
+        local devices = {
+
+            {
+                device = "Living Room Temperature",
+                id = "home-temp",
+                name = "Living",
+                icon = "2355",
+                type = "temperature",
+                graph = true
+            },
+
+            {
+                device = "Power Usage",
+                id = "home-power",
+                name = "Power",
+                icon = "95",
+                type = "power",
+                graph = true
+            },
+
+            {
+                device = "Water Meter - Total Usage",
+                id = "home-water",
+                name = "Water",
+                icon = "18191",
+                type = "water"
+            },
+
+            {
+                device = "Ventilation",
+                id = "home-ventilation",
+                name = "Vent",
+                icon = "20121",
+                type = "selector",
+                progress = true
+            },
+
+            {
+                device = "Heating System - Status",
+                id = "home-heating",
+                name = "Heat",
+                icon = "7627",
+                type = "text"
+            },
+
+            {
+                device = "Outside Temperature",
+                id = "outside-temp",
+                name = "Outside",
+                icon = "64162",
+                type = "temperature",
+                graph = true
+            },
+
+            {
+                device = "Gas Meter",
+                id = "home-gas",
+                name = "Gas",
+                icon = "54633",
+                type = "gas"
+            }
+        }
+
+        ------------------------------------------------------------------
+        -- Get device value
+        ------------------------------------------------------------------
+
+        local function getValue(device, config)
+
+            if config.type == "temperature"
+                and device.temperature ~= nil then
+
+                return string.format(
+                    "%.1f°C",
+                    device.temperature
+                ),
+                device.temperature
+
+
+            elseif config.type == "power"
+                and device.usage ~= nil then
+
+                return string.format(
+                    "%.0f W",
+                    device.usage
+                ),
+                device.usage
+
+
+            elseif config.type == "water"
+                and device.counterToday ~= nil then
+
+                return string.format(
+                    "%.1f L",
+                    device.counterToday
+                ),
+                device.counterToday
+
+
+            elseif config.type == "gas"
+                and device.counterToday ~= nil then
+
+                return string.format(
+                    "%.2f m³",
+                    device.counterToday
+                ),
+                device.counterToday
+
+
+            elseif config.type == "selector"
+                and device.levelName ~= nil then
+
+                return device.levelName,
+                    nil,
+                    device.level
+
+
+            elseif config.type == "text"
+                and device.text ~= nil then
+
+                return device.text, nil
+
+
+            elseif config.type == "switch" then
+
+                return device.state, nil
+            end
+
+            return nil
+        end
+
+        ------------------------------------------------------------------
+        -- Value colours
+        ------------------------------------------------------------------
+
+        local function colorFor(config, n)
+
+            if n == nil then
+                return WHITE
+            end
+
+            if config.type == "temperature" then
+
+                if n < 10 then
+                    return "#3FA9FF"
+
+                elseif n < 19 then
+                    return "#00C8FF"
+
+                elseif n <= 24 then
+                    return "#4CD964"
+
+                else
+                    return "#FF9500"
+                end
+
+
+            elseif config.type == "power" then
+
+                if n < 500 then
+                    return "#4CD964"
+
+                elseif n < 2000 then
+                    return "#FFCC00"
+
+                else
+                    return "#FF3B30"
+                end
+            end
+
+            return WHITE
+        end
+
+        ------------------------------------------------------------------
+        -- Rolling graph history
+        --
+        -- One new value is stored every minute.
+        -- Maximum GRAPH_W values = exactly the graph width.
+        ------------------------------------------------------------------
+
+        local series = domoticz.data.series or {}
+
+        local function pushHistory(id, n)
+
+            local s = series[id] or {}
+
+            s[#s + 1] = n
+
+            while #s > GRAPH_W do
+                table.remove(s, 1)
+            end
+
+            series[id] = s
+
+            return s
+        end
+
+        ------------------------------------------------------------------
+        -- Draw graph
+        --
+        -- Graph area:
+        --
+        --   x = GRAPH_X..(GRAPH_X + GRAPH_W - 1)
+        --   y = VALUE_Y..(VALUE_Y + VALUE_H - 1)
+        --
+        -- Values are automatically scaled to the visible range.
+        ------------------------------------------------------------------
+
+        local function graphCommands(history)
+
+            local commands = {}
+
+            if not SHOW_GRAPH
+                or not history
+                or #history < 2 then
+
+                return commands
+            end
+
+            local minValue = history[1]
+            local maxValue = history[1]
+
+            for i = 2, #history do
+
+                if history[i] < minValue then
+                    minValue = history[i]
+                end
+
+                if history[i] > maxValue then
+                    maxValue = history[i]
+                end
+            end
+
+            local range = maxValue - minValue
+
+            ------------------------------------------------------------------
+            -- Flat graph
+            ------------------------------------------------------------------
+
+            if range == 0 then
+
+                local y = VALUE_Y + math.floor(VALUE_H / 2)
+
+                for x = 0, #history - 2 do
+
+                    commands[#commands + 1] = {
+                        "line",
+                        GRAPH_X + x,
+                        y,
+                        GRAPH_X + x + 1,
+                        y,
+                        GRAPH_COLOR
+                    }
+
+                end
+
+                return commands
+            end
+
+            ------------------------------------------------------------------
+            -- Scaled graph
+            ------------------------------------------------------------------
+
+            for i = 1, #history - 1 do
+
+                local v1 = history[i]
+                local v2 = history[i + 1]
+
+                local x1 = GRAPH_X + i - 1
+                local x2 = GRAPH_X + i
+
+                local normalized1 =
+                    (v1 - minValue) / range
+
+                local normalized2 =
+                    (v2 - minValue) / range
+
+                local y1 =
+                    VALUE_Y +
+                    (VALUE_H - 1) -
+                    math.floor(
+                        normalized1 *
+                        (VALUE_H - 1)
+                    )
+
+                local y2 =
+                    VALUE_Y +
+                    (VALUE_H - 1) -
+                    math.floor(
+                        normalized2 *
+                        (VALUE_H - 1)
+                    )
+
+                commands[#commands + 1] = {
+                    "line",
+                    x1,
+                    y1,
+                    x2,
+                    y2,
+                    GRAPH_COLOR
+                }
+            end
+
+            return commands
+        end
+
+        ------------------------------------------------------------------
+        -- Compact value formatting
+        --
+        -- The value area can be fairly narrow, so use compact
+        -- representations rather than allowing text to overlap the graph.
+        ------------------------------------------------------------------
+
+        local function fitValue(text)
+
+            if not text then
+                return ""
+            end
+
+            text = tostring(text)
+
+            ------------------------------------------------------------------
+            -- Temperature
+            --
+            -- 21.5°C -> 21.5°
+            ----------------------------------------------------------------------
+
+            if string.find(text, "°C") then
+
+                local number =
+                    string.match(
+                        text,
+                        "([%-%.%d]+)°C"
+                    )
+
+                if number then
+
+                    local n = tonumber(number)
+
+                    if n then
+
+                        return string.format(
+                            "%.1f°",
+                            n
+                        )
+                    end
+                end
+            end
+
+            ------------------------------------------------------------------
+            -- Power
+            --
+            -- 450 W  -> 450W
+            -- 1250 W -> 1.3k
+            ----------------------------------------------------------------------
+
+            if string.find(text, " W") then
+
+                local number =
+                    string.match(
+                        text,
+                        "([%-%.%d]+) W"
+                    )
+
+                if number then
+
+                    local n = tonumber(number)
+
+                    if n then
+
+                        if n >= 1000 then
+
+                            return string.format(
+                                "%.1fk",
+                                n / 1000
+                            )
+                        end
+
+                        return string.format(
+                            "%.0fW",
+                            n
+                        )
+                    end
+                end
+            end
+
+            ------------------------------------------------------------------
+            -- Gas
+            --
+            -- 1.25 m³ -> 1.25m³
+            ----------------------------------------------------------------------
+
+            if string.find(text, " m³") then
+
+                local number =
+                    string.match(
+                        text,
+                        "([%-%.%d]+) m³"
+                    )
+
+                if number then
+                    return number .. "m³"
+                end
+            end
+
+            ------------------------------------------------------------------
+            -- Water
+            --
+            -- 12.3 L -> 12.3L
+            ----------------------------------------------------------------------
+
+            if string.find(text, " L") then
+
+                local number =
+                    string.match(
+                        text,
+                        "([%-%.%d]+) L"
+                    )
+
+                if number then
+                    return number .. "L"
+                end
+            end
+
+            ------------------------------------------------------------------
+            -- Text values such as Quatt / ventilation.
+            --
+            -- Keep them short enough that they don't run into the graph.
+            ----------------------------------------------------------------------
+
+            local maxChars = math.max(3, math.floor(VALUE_W / 4))
+
+            if #text > maxChars then
+                return string.sub(text, 1, maxChars)
+            end
+
+            return text
+        end
+
+        ------------------------------------------------------------------
+        -- Build AWTRIX NG pushed apps
+        ------------------------------------------------------------------
+
+        local apps = {}
+
+        for _, config in ipairs(devices) do
+
+            local device =
+                domoticz.devices(config.device)
+
+            if not device then
+
+                domoticz.log(
+                    "Domoticz device not found: " ..
+                    config.device,
+                    domoticz.LOG_ERROR
+                )
+
+            else
+
+                local value, number, percent =
+                    getValue(
+                        device,
+                        config
+                    )
+
+                if not value then
+
+                    domoticz.log(
+                        "No usable value for: " ..
+                        config.device,
+                        domoticz.LOG_DEBUG
+                    )
+
+                else
+
+                    ------------------------------------------------------------------
+                    -- AWTRIX NG application
+                    --
+                    -- IMPORTANT:
+                    -- There is intentionally NO "appname" here.
+                    -- The AWTRIX NG plugin handles the pushed-app name.
+                    ----------------------------------------------------------------------
+
+                    local app = {
+
+                        backgroundColor = "#000000",
+
+                        ------------------------------------------------------------------
+                        -- Icon at x=0,y=0 (size depends on panel height)
+                        ----------------------------------------------------------------------
+
+                        icons = {
+                            {
+                                icon = tostring(config.icon),
+                                x = 0,
+                                y = 0
+                            }
+                        },
+
+                        draw = {},
+
+                        ------------------------------------------------------------------
+                        -- Draw commands are kept behind the native app text layer.
+                        ----------------------------------------------------------------------
+
+                        textInFront = true
+                    }
+
+                    ------------------------------------------------------------------
+                    -- Label (only when there is a dedicated label row)
+                    ----------------------------------------------------------------------
+
+                    if HAS_LABEL_ROW then
+
+                        app.draw[#app.draw + 1] = {
+                            "text",
+                            CONTENT_X,
+                            LABEL_Y,
+                            config.name,
+                            DIM
+                        }
+                    end
+
+                    ------------------------------------------------------------------
+                    -- Graph
+                    ----------------------------------------------------------------------
+
+                    if SHOW_GRAPH
+                        and config.graph
+                        and number ~= nil then
+
+                        local history =
+                            pushHistory(
+                                config.id,
+                                number
+                            )
+
+                        local graph =
+                            graphCommands(history)
+
+                        for _, command in ipairs(graph) do
+
+                            app.draw[#app.draw + 1] =
+                                command
+
+                        end
+                    end
+
+                    ------------------------------------------------------------------
+                    -- Value
+                    ----------------------------------------------------------------------
+
+                    local displayValue =
+                        fitValue(value)
+
+                    local valueColor =
+                        colorFor(
+                            config,
+                            number
+                        )
+
+                    app.draw[#app.draw + 1] = {
+                        "text",
+                        VALUE_X,
+                        VALUE_Y,
+                        displayValue,
+                        valueColor
+                    }
+
+                    ------------------------------------------------------------------
+                    -- Progress bar (e.g. ventilation level)
+                    --
+                    -- Only drawn on panels tall enough to reserve a bottom row.
+                    ----------------------------------------------------------------------
+
+                    if HAS_ACCENT_ROW
+                        and config.progress
+                        and percent ~= nil then
+
+                        local progressValue = percent
+
+                        if progressValue < 0 then
+                            progressValue = 0
+
+                        elseif progressValue > 100 then
+                            progressValue = 100
+                        end
+
+                        local progressWidth =
+                            math.floor(
+                                CONTENT_W *
+                                progressValue /
+                                100
+                            )
+
+                        ------------------------------------------------------------------
+                        -- Track
+                        ----------------------------------------------------------------------
+
+                        app.draw[#app.draw + 1] = {
+                            "rectFill",
+                            CONTENT_X,
+                            ACCENT_Y,
+                            CONTENT_W,
+                            1,
+                            PROGRESS_TRACK
+                        }
+
+                        ------------------------------------------------------------------
+                        -- Filled portion
+                        ----------------------------------------------------------------------
+
+                        if progressWidth > 0 then
+
+                            app.draw[#app.draw + 1] = {
+                                "rectFill",
+                                CONTENT_X,
+                                ACCENT_Y,
+                                progressWidth,
+                                1,
+                                PROGRESS_COLOR
+                            }
+
+                        end
+                    end
+
+                    ------------------------------------------------------------------
+                    -- Add application
+                    ----------------------------------------------------------------------
+
+                    apps[#apps + 1] = app
+
+                    domoticz.log(
+                        string.format(
+                            "%s: %s (icon %s)",
+                            config.name,
+                            value,
+                            config.icon
+                        ),
+                        domoticz.LOG_DEBUG
+                    )
+                end
+            end
+        end
+
+        ------------------------------------------------------------------
+        -- Persist graph history
+        ----------------------------------------------------------------------
+
+        domoticz.data.series = series
+
+        ------------------------------------------------------------------
+        -- Nothing to send
+        ----------------------------------------------------------------------
+
+        if #apps == 0 then
+
+            domoticz.log(
+                "No home status values available.",
+                domoticz.LOG_ERROR
+            )
+
+            return
+        end
+
+        ------------------------------------------------------------------
+        -- AWTRIX NG custom-app device
+        ----------------------------------------------------------------------
+
+        local AWTRIXNG =
+            domoticz.devices(
+                "AWTRIXNG - Send Custom App"
+            )
+
+        if not AWTRIXNG then
+
+            domoticz.log(
+                "AWTRIXNG - Send Custom App device not found.",
+                domoticz.LOG_ERROR
+            )
+
+            return
+        end
+
+        ------------------------------------------------------------------
+        -- Convert to JSON
+        ----------------------------------------------------------------------
+
+        local json =
+            domoticz.utils.toJSON(apps)
+
+        domoticz.log(
+            string.format(
+                "Updating %d AWTRIXNG status apps.",
+                #apps
+            ),
+            domoticz.LOG_INFO
+        )
+
+        domoticz.log(
+            "Payload: " .. json,
+            domoticz.LOG_DEBUG
+        )
+
+        ------------------------------------------------------------------
+        -- Send to AWTRIX NG plugin.
+        --
+        -- The plugin uses its default pushed-app name.
+        --
+        -- With an array this results in:
+        --
+        --   Domoticz0
+        --   Domoticz1
+        --   Domoticz2
+        --   Domoticz3
+        --   Domoticz4
+        --   Domoticz5
+        --   Domoticz6
+        --
+        -- No "appname" field is included in the JSON.
+        ----------------------------------------------------------------------
+
+        AWTRIXNG.setDescription(json)
+
+        AWTRIXNG.switchOn().afterSec(1)
+    end
+}

@@ -26,26 +26,26 @@ return {
         
         -- Ordered list of device names to enforce consistent iteration
         local orderedDevices = {
-            "Kerstboom",
-            "Temperatuur - Woonkamer",
-            "Power",
-            "Watermeter - Total usage",
-            "Itho - Ventilation",
-            "Quatt - Status",
-            "Buiten temperatuur",
-            "Gas"
+            "Christmas Tree",
+            "Living Room Temperature",
+            "Power Usage",
+            "Water Meter - Total Usage",
+            "Ventilation",
+            "Heating System - Status",
+            "Outside Temperature",
+            "Gas Meter"
         }
-        
+
         -- Unified dictionary of devices with icon mappings
         local devicesConfig = {
-            ["Kerstboom"] = { icon = 4889, type = "switch" },
-            ["Temperatuur - Woonkamer"] = { icon = 2355, type = "temperature" },
-            ["Power"] = { icon = 95, type = "power" },
-            ["Watermeter - Total usage"] = { icon = 18191, type = "water" },
-            ["Itho - Ventilation"] = { icon = 20121, type = "selector" },
-            ["Quatt - Status"] = { icon = 7627, type = "text" },
-            ["Buiten temperatuur"] = { icon = 64162, type = "temperature" },
-            ["Gas"] = { icon = 54633, type = "gas" }
+            ["Christmas Tree"] = { icon = 4889, type = "switch" },
+            ["Living Room Temperature"] = { icon = 2355, type = "temperature" },
+            ["Power Usage"] = { icon = 95, type = "power" },
+            ["Water Meter - Total Usage"] = { icon = 18191, type = "water" },
+            ["Ventilation"] = { icon = 20121, type = "selector" },
+            ["Heating System - Status"] = { icon = 7627, type = "text" },
+            ["Outside Temperature"] = { icon = 64162, type = "temperature" },
+            ["Gas Meter"] = { icon = 54633, type = "gas" }
         }
         
         local statuses = {}
